@@ -1,0 +1,68 @@
+# Stack Portainer P2H AKP untuk metode "Repository" (Git). TANPA rahasia: nilai ${...} diisi di Portainer > Environment variables.
+# Buat isiannya dengan: powershell -ExecutionPolicy Bypass -File deploy\portainer\buat-isian-p2h.ps1
+# Yang WAJIB diisi 3: DB_PASSWORD, APP_KEY, PORTAL_SSO_SECRET (dari Portal > Modul > P2H AKP > Integrasi).
+# Stack ini BARU dan terpisah dari stack lain di server (nama stack, volume, dan port berbeda).
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-3313}:3306"      # untuk DBeaver lewat SSH tunnel (hanya localhost server)
+    environment:
+      MARIADB_DATABASE: akp_p2h
+      MARIADB_USER: p2h
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-${DB_PASSWORD}}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  p2h:
+    image: ghcr.io/eddyyucca/akp-p2h:${P2H_TAG:-latest}
+    pull_policy: always                 # selalu tarik image terbaru dari ghcr (Re-pull image di Portainer CE tidak tersedia)
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${P2H_PORT:-8111}:80"
+    environment:
+      APP_NAME: "P2H AKP"
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${APP_KEY}
+      APP_URL: ${P2H_URL:-https://p2h.lameruru.web.id}
+      APP_TIMEZONE: Asia/Makassar
+      APP_LOCALE: id
+      APP_FALLBACK_LOCALE: id
+      LOG_CHANNEL: stderr
+      LOG_LEVEL: warning
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_DATABASE: akp_p2h
+      DB_USERNAME: p2h
+      DB_PASSWORD: ${DB_PASSWORD}
+      SESSION_DRIVER: file
+      SESSION_COOKIE: akp_p2h_session
+      SESSION_SECURE_COOKIE: ${SESSION_SECURE_COOKIE:-true}
+      CACHE_STORE: file
+      QUEUE_CONNECTION: sync
+      PORTAL_URL: ${PORTAL_URL:-https://portal.lameruru.web.id}
+      PORTAL_APP_CODE: ${PORTAL_APP_CODE:-p2h}   # harus sama dengan KODE modul di Portal
+      PORTAL_SSO_SECRET: ${PORTAL_SSO_SECRET}
+      AUTO_MIGRATE: "true"
+    volumes:
+      - p2h_storage:/var/www/html/storage
+
+volumes:
+  dbdata:
+    name: akp_p2h_dbdata
+  p2h_storage:
+    name: akp_p2h_storage
